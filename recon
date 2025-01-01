@@ -1,0 +1,79 @@
+# this is only for subdomain and subdomain of subdomain.
+
+#!/bin/bash
+
+# Function to show a blinking dot while the process is running
+blink() {
+    while true; do
+        echo -n "."
+        sleep 1
+    done
+}
+
+# Trap to kill blinking dots on script exit
+trap "kill 0" EXIT
+
+# Ask for the domain name
+read -p "Enter the domain name: " TARGET
+
+# Validate the domain name
+if [[ ! $TARGET =~ ^[a-zA-Z0-9.-]+$ ]]; then
+    echo "Invalid domain name. Exiting."
+    exit 1
+fi
+
+# Set the base directories
+BASE_DIR="$TARGET"
+SUBDOMAINS_DIR="$BASE_DIR/subdomains"
+SUBSUBDOMAINS_FILE="$BASE_DIR/subdomains_of_subdomains.txt"
+
+# Create directories for output
+mkdir -p "$SUBDOMAINS_DIR"
+
+# Step 1: Find Subdomains with a blinking dot
+echo "[*] Finding subdomains for $TARGET"
+blink &  # Start the blinking dot in the background
+BLINK_PID=$!
+
+# Run the subdomain finding process
+assetfinder $TARGET | grep "\.$TARGET$" >> "$SUBDOMAINS_DIR/subdomains.txt" 2>/dev/null
+subfinder -d $TARGET | grep "\.$TARGET$" >> "$SUBDOMAINS_DIR/subdomains.txt" 2>/dev/null
+
+# Sort and remove duplicates
+sort -u "$SUBDOMAINS_DIR/subdomains.txt" -o "$SUBDOMAINS_DIR/subdomains.txt"
+
+# Kill the blinking dot after subdomain finding is done
+kill $BLINK_PID
+
+# Step 2: Find Subdomains of Subdomains with blinking dot
+echo "[*] Finding subdomains of subdomains..."
+blink &  # Start the blinking dot for subdomains of subdomains
+BLINK_PID=$!
+
+> "$SUBSUBDOMAINS_FILE"  # Clear the file before adding data
+while read SUB; do
+    assetfinder "$SUB" | grep "\.$TARGET$" >> "$SUBSUBDOMAINS_FILE" 2>/dev/null
+    subfinder -d "$SUB" | grep "\.$TARGET$" >> "$SUBSUBDOMAINS_FILE" 2>/dev/null
+done < "$SUBDOMAINS_DIR/subdomains.txt"
+
+# Sort and remove duplicates for subdomains of subdomains
+sort -u "$SUBSUBDOMAINS_FILE" -o "$SUBSUBDOMAINS_FILE"
+
+# Kill the blinking dot after subdomain of subdomain finding is done
+kill $BLINK_PID
+
+# Step 3: Check Live Subdomains with blinking dot
+echo "[*] Checking live subdomains..."
+blink &  # Start the blinking dot for live subdomains
+BLINK_PID=$!
+
+# Check live subdomains and save results
+httpx -l "$SUBDOMAINS_DIR/subdomains.txt" -silent > "$SUBDOMAINS_DIR/live_subdomains.txt" 2>/dev/null
+
+# Check live subdomains of subdomains and save results
+httpx -l "$SUBSUBDOMAINS_FILE" -silent > "$BASE_DIR/live_subdomains_of_subdomains.txt" 2>/dev/null
+
+# Kill the blinking dot after checking live subdomains
+kill $BLINK_PID
+
+echo "[*] Recon completed. Results saved in $BASE_DIR"
